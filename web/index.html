@@ -118,17 +118,15 @@
             <div id="view-projects" class="hidden" aria-label="實驗專案列表"></div>
             <div id="view-custom" class="hidden" aria-label="自製專案">
                 <div class="glass-card rounded-xl border border-slate-600/30 p-4 max-w-xl">
-                    <h2 class="text-base font-bold text-slate-100 mb-1">自製專案（外部卡帶）</h2>
+                    <h2 class="text-base font-bold text-slate-100 mb-1">自製專案（雲端卡帶 / 本機卡帶）</h2>
                     <p class="text-[11px] text-slate-500 mb-3 leading-relaxed">
-                        <strong class="text-slate-400">網址</strong>：貼上可公開存取的 <strong class="text-slate-400">ES 模組</strong> URL（需允許 CORS）。<strong class="text-slate-400">本機 JS</strong>：匯入單一 <code class="text-slate-500">.js</code> 檔（無需 CORS）。<strong class="text-slate-400">本機資料夾</strong>：可連同同資料夾 PNG/MP3 等資源一起載入（瀏覽器若詢問是否上傳檔案到本網站，請點<strong class="text-slate-400">「上傳」</strong>；需 Service Worker，請用 HTTPS 或 localhost 開啟）。模組須 export <code class="text-cyan-400/90">mount</code>／<code class="text-cyan-400/90">unmount</code> 或 <code class="text-cyan-400/90">cleanup</code>，並監聽 <code class="text-cyan-400/90">omnisense:data</code>（見 <code class="text-slate-500">docs/PROTOCOL.md</code>）。
+                        <strong class="text-slate-400">雲端卡帶</strong>：貼上可公開存取的 <strong class="text-slate-400">ES 模組</strong> URL（需允許 CORS）。<strong class="text-slate-400">本機卡帶</strong>：匯入本地資料夾，連同同資料夾 PNG/MP3 等資源一起載入（需 Service Worker，請用 HTTPS 或 localhost 開啟）。模組須 export <code class="text-cyan-400/90">mount</code>／<code class="text-cyan-400/90">unmount</code> 或 <code class="text-cyan-400/90">cleanup</code>，並監聽 <code class="text-cyan-400/90">omnisense:data</code>（見 <code class="text-slate-500">docs/PROTOCOL.md</code>）。
                     </p>
-                    <input type="file" id="customModuleFile" name="customModuleFile" accept=".js,text/javascript,application/javascript" class="hidden" aria-hidden="true">
                     <input type="file" id="customModuleFolder" name="customModuleFolder" webkitdirectory directory multiple class="hidden" aria-hidden="true">
-                    <button type="button" id="customImportFileBtn" class="w-full sm:w-auto rounded-lg border border-slate-600 bg-slate-800/90 hover:bg-slate-700/90 px-5 py-2.5 text-sm font-bold text-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 mb-3">匯入本地端 JS 檔</button>
-                    <button type="button" id="customImportFolderBtn" class="w-full sm:w-auto rounded-lg border border-slate-600 bg-slate-800/90 hover:bg-slate-700/90 px-5 py-2.5 text-sm font-bold text-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 mb-3 sm:ml-2">匯入本地資料夾（含素材）</button>
+                    <button type="button" id="customImportFolderBtn" class="w-full sm:w-auto rounded-lg border border-slate-600 bg-slate-800/90 hover:bg-slate-700/90 px-5 py-2.5 text-sm font-bold text-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 mb-3">匯入本機卡帶（資料夾）</button>
                     <label class="sr-only" for="customModuleUrl">模組 URL</label>
                     <input type="url" id="customModuleUrl" name="customModuleUrl" inputmode="url" autocomplete="off" placeholder="https://example.com/my-experiment/app.js" class="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 mb-3">
-                    <button type="button" id="customLaunchBtn" class="w-full sm:w-auto rounded-lg bg-cyan-600 hover:bg-cyan-500 px-5 py-2.5 text-sm font-bold shadow-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">啟動實驗</button>
+                    <button type="button" id="customLaunchBtn" class="w-full sm:w-auto rounded-lg bg-cyan-600 hover:bg-cyan-500 px-5 py-2.5 text-sm font-bold shadow-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">啟動雲端卡帶</button>
                 </div>
                 <div class="max-w-xl mt-3 space-y-2" aria-label="專案資訊與聯絡">
                     <p class="text-xs text-slate-400">作者：蔡明勳（小威老師）</p>
