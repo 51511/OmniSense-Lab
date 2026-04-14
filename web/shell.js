@@ -653,9 +653,9 @@ async function init() {
         launchLocalCustomModule(f).catch(console.error);
     });
     customFolderInput?.addEventListener('change', () => {
-        const files = customFolderInput.files;
+        const files = Array.from(customFolderInput.files || []);
         customFolderInput.value = '';
-        if (!files?.length) {
+        if (!files.length) {
             window.alert('未選取任何檔案。若瀏覽器曾詢問是否將資料夾上傳到本網站，請點「上傳」以繼續。');
             return;
         }
