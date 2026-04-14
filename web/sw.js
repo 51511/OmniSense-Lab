@@ -39,11 +39,23 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
+  const pathname = new URL(url).pathname;
+  const isLocalBundle = pathname.includes('/__omni_local__/');
   const isHtml =
     event.request.mode === 'navigate' ||
     /\/index\.html(\?|$)/.test(url) ||
     url.endsWith('/') ||
     (event.request.headers.get('accept') || '').includes('text/html');
+
+  if (isLocalBundle) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).catch(() => new Response('Local bundle asset not found', { status: 404 }));
+      })
+    );
+    return;
+  }
 
   if (isHtml) {
     event.respondWith(

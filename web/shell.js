@@ -22,12 +22,84 @@ let experimentRun = null;
 
 /** 本機匯入 JS 時的 object URL，離開模組時須 revoke */
 let localModuleBlobUrl = null;
+/** 本機資料夾匯入時的 session base path（供 teardown 清理快取） */
+let localBundleBasePath = null;
+const LOCAL_BUNDLE_PREFIX = '/__omni_local__/';
+const LOCAL_BUNDLE_CACHE = 'omnisense-local-bundles-v1';
 
 function revokeLocalModuleBlobUrl() {
     if (localModuleBlobUrl) {
         URL.revokeObjectURL(localModuleBlobUrl);
         localModuleBlobUrl = null;
     }
+}
+
+function makeLocalBundleSessionId() {
+    return `bundle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeRelativePath(p) {
+    return String(p || '')
+        .replaceAll('\\', '/')
+        .replace(/^\/+/, '')
+        .replace(/^\.\//, '');
+}
+
+function guessContentType(path) {
+    const p = path.toLowerCase();
+    if (p.endsWith('.js') || p.endsWith('.mjs')) return 'text/javascript; charset=utf-8';
+    if (p.endsWith('.json')) return 'application/json; charset=utf-8';
+    if (p.endsWith('.png')) return 'image/png';
+    if (p.endsWith('.jpg') || p.endsWith('.jpeg')) return 'image/jpeg';
+    if (p.endsWith('.gif')) return 'image/gif';
+    if (p.endsWith('.webp')) return 'image/webp';
+    if (p.endsWith('.svg')) return 'image/svg+xml';
+    if (p.endsWith('.mp3')) return 'audio/mpeg';
+    if (p.endsWith('.wav')) return 'audio/wav';
+    if (p.endsWith('.ogg')) return 'audio/ogg';
+    if (p.endsWith('.css')) return 'text/css; charset=utf-8';
+    if (p.endsWith('.html')) return 'text/html; charset=utf-8';
+    return 'application/octet-stream';
+}
+
+async function clearLocalBundleCacheByPrefix(basePath) {
+    if (!basePath) return;
+    try {
+        const cache = await caches.open(LOCAL_BUNDLE_CACHE);
+        const keys = await cache.keys();
+        await Promise.all(
+            keys.map((req) => {
+                const p = new URL(req.url).pathname;
+                if (p.startsWith(basePath)) return cache.delete(req);
+                return Promise.resolve(false);
+            })
+        );
+    } catch (e) {
+        console.warn('清除本機 bundle 快取失敗', e);
+    }
+}
+
+async function stageLocalBundleFiles(files) {
+    if (!files || !files.length) throw new Error('未選取任何檔案');
+    const sessionId = makeLocalBundleSessionId();
+    const basePath = `${LOCAL_BUNDLE_PREFIX}${sessionId}/`;
+    const baseUrl = new URL(`.${basePath}`, window.location.href);
+    const cache = await caches.open(LOCAL_BUNDLE_CACHE);
+    let entryRel = '';
+
+    for (const f of files) {
+        const rel = normalizeRelativePath(f.webkitRelativePath || f.name);
+        if (!rel) continue;
+        if (!entryRel && /\.m?js$/i.test(rel)) {
+            const tail = rel.split('/').pop()?.toLowerCase();
+            if (tail === 'app.js' || tail === 'index.js' || !entryRel) entryRel = rel;
+        }
+        const reqUrl = new URL(rel, baseUrl).href;
+        const ct = guessContentType(rel);
+        await cache.put(reqUrl, new Response(f, { headers: { 'Content-Type': ct, 'Cache-Control': 'no-store' } }));
+    }
+    if (!entryRel) throw new Error('資料夾內找不到 .js 入口檔（建議命名 app.js 或 index.js）');
+    return { entryUrl: new URL(entryRel, baseUrl).href, basePath };
 }
 
 async function getProjects() {
@@ -120,6 +192,10 @@ function updateHeaderSubtitle() {
 
 async function teardownActiveModule() {
     revokeLocalModuleBlobUrl();
+    if (localBundleBasePath) {
+        await clearLocalBundleCacheByPrefix(localBundleBasePath);
+        localBundleBasePath = null;
+    }
     if (!activeModule) return;
     try {
         if (typeof activeModule.cleanup === 'function') await activeModule.cleanup();
@@ -364,6 +440,52 @@ async function launchLocalCustomModule(file) {
     }
 }
 
+/**
+ * 自製專案：匯入本機資料夾（JS + 同資料夾資源）並掛到 SW 可讀取路徑。
+ * @param {FileList | File[]} files
+ */
+async function launchLocalCustomBundle(files) {
+    await teardownActiveModule();
+    shellNav = 'custom';
+    const all = Array.from(files || []);
+    const firstName = all[0]?.webkitRelativePath?.split('/')[0] || all[0]?.name || 'local-bundle';
+    experimentRun = { type: 'local', name: `${firstName}（資料夾）` };
+    refreshLayout();
+    setNavActive();
+    updateHeaderSubtitle();
+
+    try {
+        const staged = await stageLocalBundleFiles(all);
+        localBundleBasePath = staged.basePath;
+        const mod = await loadExternalModule(staged.entryUrl);
+        activeModule = mod;
+        activeId = 'external';
+        const root = getContainer();
+        if (!mod.mount) {
+            throw new Error('模組必須 export async function mount(root)');
+        }
+        await mod.mount(root);
+        if (ble.isConnected() && mod.onConnected) {
+            try {
+                await mod.onConnected();
+            } catch (e) {
+                console.warn(e);
+            }
+        }
+    } catch (e) {
+        console.warn(e);
+        experimentRun = null;
+        if (localBundleBasePath) {
+            await clearLocalBundleCacheByPrefix(localBundleBasePath);
+            localBundleBasePath = null;
+        }
+        refreshLayout();
+        window.alert(
+            '無法載入本機資料夾模組（需包含入口 .js，且 export mount）。\n' + String(e.message || e)
+        );
+    }
+}
+
 async function onShellNavClick(target) {
     if (target === shellNav && experimentRun) {
         await onExperimentBack();
@@ -450,7 +572,9 @@ async function init() {
     });
 
     const customFileInput = document.getElementById('customModuleFile');
+    const customFolderInput = document.getElementById('customModuleFolder');
     document.getElementById('customImportFileBtn')?.addEventListener('click', () => customFileInput?.click());
+    document.getElementById('customImportFolderBtn')?.addEventListener('click', () => customFolderInput?.click());
     customFileInput?.addEventListener('change', () => {
         const f = customFileInput.files?.[0];
         customFileInput.value = '';
@@ -460,6 +584,12 @@ async function init() {
             return;
         }
         launchLocalCustomModule(f).catch(console.error);
+    });
+    customFolderInput?.addEventListener('change', () => {
+        const files = customFolderInput.files;
+        customFolderInput.value = '';
+        if (!files?.length) return;
+        launchLocalCustomBundle(files).catch(console.error);
     });
 
     document.getElementById('connectBtn')?.addEventListener('click', onConnectClick);
