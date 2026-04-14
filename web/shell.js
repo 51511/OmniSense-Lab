@@ -39,10 +39,79 @@ function makeLocalBundleSessionId() {
 }
 
 function normalizeRelativePath(p) {
-    return String(p || '')
-        .replaceAll('\\', '/')
-        .replace(/^\/+/, '')
-        .replace(/^\.\//, '');
+    const raw = String(p || '').split('\\').join('/').replace(/^\/+/, '').replace(/^\.\//, '');
+    const parts = [];
+    for (const seg of raw.split('/')) {
+        if (seg === '' || seg === '.') continue;
+        if (seg === '..') throw new Error('資料夾內含不允許的路徑（..）');
+        parts.push(seg);
+    }
+    return parts.join('/');
+}
+
+/**
+ * 從資料夾內所有 .js 路徑挑出入口檔（避免 FileList 順序把非入口檔當成第一個）。
+ * @param {string[]} jsRelPaths
+ * @returns {string}
+ */
+function pickLocalBundleEntryRel(jsRelPaths) {
+    const paths = [...new Set(jsRelPaths)].filter(Boolean);
+    if (!paths.length) {
+        throw new Error('資料夾內找不到 .js 入口檔（建議命名 app.js 或 index.js）');
+    }
+    const lower = (s) => s.toLowerCase();
+    const tail = (s) => s.split('/').pop() || s;
+    const priority = ['app.js', 'index.js', 'main.js', 'main.mjs'];
+    for (const name of priority) {
+        const hit = paths.find((p) => lower(tail(p)) === name);
+        if (hit) return hit;
+    }
+    if (paths.length === 1) return paths[0];
+    paths.sort((a, b) => {
+        const da = a.split('/').length;
+        const db = b.split('/').length;
+        if (da !== db) return da - db;
+        return lower(a).localeCompare(lower(b));
+    });
+    return paths[0];
+}
+
+/**
+ * 本機資料夾模組依賴 SW 攔截 /__omni_local__/；若頁面尚未被 SW 接管，import 會直接 404。
+ */
+async function ensureServiceWorkerForLocalBundle() {
+    if (!('serviceWorker' in navigator)) {
+        throw new Error('此瀏覽器不支援 Service Worker，無法使用「匯入本地資料夾」；請改用貼上 HTTPS 網址，或只匯入單一 JS。');
+    }
+    if (window.location.protocol === 'file:') {
+        throw new Error('請勿用檔案總管直接開啟 HTML；請用 localhost 或 HTTPS 開啟（見 README 的 Web 使用方式），否則無法載入本機資料夾模組。');
+    }
+    const swUrl = new URL('./sw.js', import.meta.url);
+    const scopeUrl = new URL('./', import.meta.url);
+    await navigator.serviceWorker.register(swUrl.href, { scope: scopeUrl.href });
+    await navigator.serviceWorker.ready;
+    for (let i = 0; i < 40 && !navigator.serviceWorker.controller; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+    }
+    if (!navigator.serviceWorker.controller) {
+        await new Promise((resolve) => {
+            const done = () => resolve();
+            const t = setTimeout(done, 2500);
+            navigator.serviceWorker.addEventListener(
+                'controllerchange',
+                () => {
+                    clearTimeout(t);
+                    done();
+                },
+                { once: true }
+            );
+        });
+    }
+    if (!navigator.serviceWorker.controller) {
+        throw new Error(
+            'Service Worker 尚未接管本頁面，無法載入本機資料夾。請按 Ctrl+F5 強制重新整理後再試一次；或到開發者工具 → Application → Service Workers 確認已啟用。'
+        );
+    }
 }
 
 function guessContentType(path) {
@@ -81,24 +150,22 @@ async function clearLocalBundleCacheByPrefix(basePath) {
 
 async function stageLocalBundleFiles(files) {
     if (!files || !files.length) throw new Error('未選取任何檔案');
+    await ensureServiceWorkerForLocalBundle();
     const sessionId = makeLocalBundleSessionId();
     const basePath = `${LOCAL_BUNDLE_PREFIX}${sessionId}/`;
     const baseUrl = new URL(`.${basePath}`, window.location.href);
     const cache = await caches.open(LOCAL_BUNDLE_CACHE);
-    let entryRel = '';
+    const jsRelPaths = [];
 
     for (const f of files) {
         const rel = normalizeRelativePath(f.webkitRelativePath || f.name);
         if (!rel) continue;
-        if (!entryRel && /\.m?js$/i.test(rel)) {
-            const tail = rel.split('/').pop()?.toLowerCase();
-            if (tail === 'app.js' || tail === 'index.js' || !entryRel) entryRel = rel;
-        }
+        if (/\.m?js$/i.test(rel)) jsRelPaths.push(rel);
         const reqUrl = new URL(rel, baseUrl).href;
         const ct = guessContentType(rel);
         await cache.put(reqUrl, new Response(f, { headers: { 'Content-Type': ct, 'Cache-Control': 'no-store' } }));
     }
-    if (!entryRel) throw new Error('資料夾內找不到 .js 入口檔（建議命名 app.js 或 index.js）');
+    const entryRel = pickLocalBundleEntryRel(jsRelPaths);
     return { entryUrl: new URL(entryRel, baseUrl).href, basePath };
 }
 
@@ -588,7 +655,10 @@ async function init() {
     customFolderInput?.addEventListener('change', () => {
         const files = customFolderInput.files;
         customFolderInput.value = '';
-        if (!files?.length) return;
+        if (!files?.length) {
+            window.alert('未選取任何檔案。若瀏覽器曾詢問是否將資料夾上傳到本網站，請點「上傳」以繼續。');
+            return;
+        }
         launchLocalCustomBundle(files).catch(console.error);
     });
 

@@ -2,7 +2,7 @@
  * OmniSense Lab — Service Worker（離線快取）
  * 對應釋出：0.4.3 · 版本規則：docs/VERSIONING.md
  */
-const CACHE_NAME = 'omnisense-lab-web-v0.4.3';
+const CACHE_NAME = 'omnisense-lab-web-v0.4.4';
 const ASSETS_TO_CACHE = [
   './index.html',
   './manifest.json',
@@ -49,7 +49,7 @@ self.addEventListener('fetch', (event) => {
 
   if (isLocalBundle) {
     event.respondWith(
-      caches.match(event.request).then((cached) => {
+      caches.match(event.request, { ignoreSearch: true }).then((cached) => {
         if (cached) return cached;
         return fetch(event.request).catch(() => new Response('Local bundle asset not found', { status: 404 }));
       })

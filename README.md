@@ -31,7 +31,9 @@
    **注意**：自製專案「匯入本地端 JS 檔」模式適合 **無額外相對路徑 `import` 其它檔案** 的單檔模組；若需多檔或套件，請改為將模組託管在 **HTTPS** 網址，並在 Lab 內改以 **貼上網址** 載入（見 [CUSTOM_MODULE.md](docs/CUSTOM_MODULE.md)）。
 
 4. **在 OmniSense Lab 中載入**  
-   使用 **Chrome／Edge** 等支援 Web Bluetooth 的瀏覽器，依下方 [Web 使用方式](#web-使用方式) 開啟本專案頁面（**HTTPS** 或 **localhost**）。進入 **「自製專案」** 分頁，點 **「匯入本地端 JS 檔」**，選取剛儲存的 `.js`。  
+   使用 **Chrome／Edge** 等支援 Web Bluetooth 的瀏覽器，依下方 [Web 使用方式](#web-使用方式) 開啟本專案頁面（**HTTPS** 或 **localhost**）。進入 **「自製專案」** 分頁後，可依需求擇一：  
+   - **匯入本地端 JS 檔**：適合單一 `.js` 模組（不依賴同資料夾素材）。  
+   - **匯入本地資料夾（含素材）**：適合 `app.js` / `index.js` 搭配同資料夾 `png/mp3` 等相對路徑資源。  
    與官方實驗相同：請先在 **主控台** 完成與 ESP32 的 **Web Bluetooth** 連線，資料才會透過 `omnisense:data` 傳入您的模組。
 
 ---
@@ -56,7 +58,7 @@ OmniSense-Lab/
 ```
 
 - **核心與實驗解耦**：`web/core/` 負責連線與 `omnisense:data` 事件；實驗僅實作 `mount` / `unmount` / 可選 `onConnected`。
-- **自製專案（卡帶）**：Shell 以動態 `import()` 載入 **https（或本機 http）上的 ES module**，或使用 **匯入本地端 JS 檔**（單一 `.js`、無需 CORS）；教師可將模組託管於 GitHub Pages、Lovable 匯出站等，並搭配 [docs/CUSTOM_MODULE.md](docs/CUSTOM_MODULE.md) 與 AI 提示詞產生教案。
+- **自製專案（卡帶）**：Shell 以動態 `import()` 載入 **https（或本機 http）上的 ES module**，或使用 **匯入本地端 JS 檔**（單一 `.js`、無需 CORS），或使用 **匯入本地資料夾（含素材）**（支援同資料夾相對路徑圖片/音樂）；教師可將模組託管於 GitHub Pages、Lovable 匯出站等，並搭配 [docs/CUSTOM_MODULE.md](docs/CUSTOM_MODULE.md) 與 AI 提示詞產生教案。
 - **韌體**：請於 Arduino IDE 開啟 **`firmware/OmniSense_Main/OmniSense_Main.ino`**（若根目錄仍有舊資料夾 `OmniSense_Main`，請改以 `firmware/` 下為準並刪除重複）。
 
 ## Web 使用方式
@@ -75,7 +77,7 @@ python -m http.server 8080
 |------|------|
 | [docs/PRD.md](docs/PRD.md) | 需求與願景 |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | BLE 指令、封包、觸控數值定義 |
-| [docs/CUSTOM_MODULE.md](docs/CUSTOM_MODULE.md) | **自製專案（外部卡帶）**：網址載入、本機 JS、CORS、事件介面、給 AI 的提示詞範例 |
+| [docs/CUSTOM_MODULE.md](docs/CUSTOM_MODULE.md) | **自製專案（外部卡帶）**：網址載入、本機 JS／本機資料夾（含素材）、CORS、事件介面、給 AI 的提示詞範例 |
 | [docs/WIRING_GUIDE.md](docs/WIRING_GUIDE.md) | 腳位與接線建議 |
 | [docs/VERSIONING.md](docs/VERSIONING.md) | 版本號與同步方式 |
 
@@ -91,7 +93,7 @@ python -m http.server 8080
 ### 教師／第三方自託管（不併入儲庫）
 
 1. 依 [docs/CUSTOM_MODULE.md](docs/CUSTOM_MODULE.md) 實作單一（或少量）ES module，並部署到 **HTTPS**（開發可用 **localhost**）。
-2. 在 OmniSense Lab 的 **「自製專案」**貼上該模組的完整 URL，或使用 **匯入本地端 JS 檔** 即可執行；適合搭配 Lovable 等工具，並將 `PROTOCOL.md` + `CUSTOM_MODULE.md` 一併餵給 AI 以產生量測儀表等互動教材。
+2. 在 OmniSense Lab 的 **「自製專案」**貼上該模組的完整 URL，或使用 **匯入本地端 JS 檔**（單檔），或使用 **匯入本地資料夾（含素材）**（多檔與相對路徑素材）即可執行；適合搭配 Lovable 等工具，並將 `PROTOCOL.md` + `CUSTOM_MODULE.md` 一併餵給 AI 以產生量測儀表等互動教材。
 
 ## 授權
 
