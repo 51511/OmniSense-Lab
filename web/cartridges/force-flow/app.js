@@ -3,6 +3,10 @@
  * 整合：封面渲染、循環配樂、5s自動校準、等級系統
  */
 
+import { applyDeviceConfig } from '../../core/configApply.js';
+import { omni } from '../../core/state.js';
+import { computeTouchModeMask } from '../../core/touchMask.js';
+
 const SCRIPT_URL = import.meta.url;
 const ASSETS_BASE = SCRIPT_URL.substring(0, SCRIPT_URL.lastIndexOf('/')) + '/force-flow-assets/';
 
@@ -37,6 +41,8 @@ let bgmGainNode = null;
 let lastSpawnFrame = 0;
 
 const SELECTED_ADC_ID = 2; // 預設使用 GPIO 2
+const FF_ACTIVE_MASK = (1 << 0) | (1 << 2); // GPIO0(觸控) + GPIO2(弓箭壓力)
+const FF_PULLUP_MASK = 1 << 0; // 觸控通道建議開啟上拉
 
 export async function mount(root) {
     // 1. 預載資源 (包含解碼音訊)
@@ -128,6 +134,30 @@ export async function mount(root) {
         animationId = requestAnimationFrame(loop);
     };
     animationId = requestAnimationFrame(loop);
+}
+
+/**
+ * 與官方實驗一致：進入卡帶後若已連線，或稍後連線，皆自動套用預設腳位。
+ * - 只啟用 GPIO0 / GPIO2
+ * - GPIO0 為 touch，GPIO2 為 adc（壓力）
+ */
+export async function onConnected() {
+    omni.channelMode = omni.channelMode.map((_, idx) => {
+        if (idx >= 5) return 'dig';
+        if (idx === 0) return 'touch';
+        return 'adc';
+    });
+    omni.activeMask = FF_ACTIVE_MASK;
+    omni.pullupMask = FF_PULLUP_MASK;
+
+    const touchMask = computeTouchModeMask();
+    await applyDeviceConfig({
+        freq: omni.lastFreq || 100,
+        res: omni.lastRes || 1,
+        activeMask: omni.activeMask,
+        pullupMask: omni.pullupMask,
+        touchMask
+    });
 }
 
 // --- 資源管理 ---
