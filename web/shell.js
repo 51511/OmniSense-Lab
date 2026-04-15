@@ -294,12 +294,7 @@ function renderProjectGrid() {
     if (!wrap) return;
     getProjects().then((projects) => {
         const list = catalogExperiments(projects);
-        wrap.innerHTML = `
-            <div class="mb-3">
-                <h2 class="text-base font-bold text-slate-100 tracking-tight">實驗專案</h2>
-                <p class="text-[11px] text-slate-500 mt-0.5">點選卡帶以動態載入 <code class="text-cyan-500/90">experiments/&lt;id&gt;/app.js</code>。</p>
-            </div>
-            <div id="project-grid-inner" class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3"></div>`;
+        wrap.innerHTML = `<div id="project-grid-inner" class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3"></div>`;
         const inner = document.getElementById('project-grid-inner');
         for (const ex of list) {
             const card = document.createElement('button');

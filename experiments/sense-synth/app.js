@@ -304,10 +304,6 @@ function mountP5(host) {
                 p.ellipse(cx, pad + h * 0.5, 10 + en * 22, 10 + en * 22);
             }
 
-            p.fill(120, 100, 80);
-            p.textAlign(p.LEFT, p.BOTTOM);
-            p.textSize(9);
-            p.text('拾音器 · 弦振動示意（類比變化愈大愈亮）', pad, p.height - 4);
         };
         p.windowResized = () => {
             p.resizeCanvas(Math.max(300, host.clientWidth), 260);
@@ -326,6 +322,12 @@ function refreshToggleVisual() {
 }
 
 function wireUi() {
+    rootEl?.querySelector('#omx-side-toggle')?.addEventListener('click', () => {
+        const compact = rootEl?.classList.toggle('omx-compact');
+        const btn = rootEl?.querySelector('#omx-side-toggle');
+        if (btn) btn.textContent = compact ? '展開' : '側邊';
+    });
+
     for (let i = 0; i < 5; i++) {
         rootEl?.querySelector(`[data-omx-ch="${i}"]`)?.addEventListener('click', async () => {
             await resumeAudio();
@@ -384,12 +386,15 @@ function buildDom(root) {
     root.innerHTML = `
 <div class="omx-root">
   <div class="omx-hero">
-    <div class="omx-title">Omni混音機</div>
+    <div class="omx-title-wrap">
+      <div class="omx-title">Omni混音機</div>
+      <button id="omx-side-toggle" type="button" class="omx-side-btn">側邊</button>
+    </div>
     <p class="omx-sub">五軌即時感測合成器 · 多音同時輸出 · 教室友善音色</p>
   </div>
 
   <div class="omx-grid">
-    <div class="omx-card">
+    <div class="omx-card omx-controls-card">
       <h3>音色與混音</h3>
       <div class="omx-row">
         <label for="omx-style">音色風格</label>
@@ -425,7 +430,6 @@ function buildDom(root) {
     </div>
 
     <div class="omx-card">
-      <h3>拾音器（弦振動示意）</h3>
       <div id="omx-canvas" class="omx-viz omx-viz--pickup"></div>
     </div>
   </div>
