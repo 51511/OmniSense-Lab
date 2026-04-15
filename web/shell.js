@@ -1,6 +1,8 @@
 ﻿/**
- * App Shell嚗??撠汗嚗蜓?批嚗祕撽?獢??芾ˊ撠?嚗撣嗅???頛???賡望? teardown?? * 摰璅∠?嚗mport ../experiments/{id}/app.js
- * ?芾ˊ撠?嚗oadExternalModule(url) ???? import嚗?蝡舫? CORS嚗?啁 blob URL嚗? */
+ * App Shell：三區導覽（主控台／實驗專案／自製專案）、卡帶式動態載入、生命週期 teardown。
+ * 官方模組：import ../experiments/{id}/app.js
+ * 自製專案：loadExternalModule(url) → 動態 import（遠端需 CORS；本地為 blob URL）
+ */
 
 import { pushBlePacket, clearBleQueue, startEventLoop } from './core/events.js';
 import * as ble from './core/ble.js';
@@ -10,7 +12,7 @@ import { applyHardwarePreset } from './hardwarePreset.js';
 let activeModule = null;
 let activeId = null;
 let cachedProjects = null;
-/** 撌脩 Shell 憟 projects/config ??hardwarePreset ? true嚗?撖阡? onConnected ?仿??批遣 PRESET */
+/** 已由 Shell 套用 projects/config 的 hardwarePreset 時為 true，供實驗 onConnected 略過內建 PRESET */
 let lastShellPresetApplied = false;
 
 /** @type {'console' | 'projects' | 'custom'} */
@@ -18,87 +20,29 @@ let shellNav = 'console';
 /** @type {null | { type: 'official', id: string } | { type: 'external', url: string } | { type: 'local', name: string }} */
 let experimentRun = null;
 
-/** ?祆?鞈?憭曉?交???session base path嚗? teardown 皜?敹怠?嚗?*/
+/** 本機匯入 JS 時的 object URL，離開模組時須 revoke */
+let localModuleBlobUrl = null;
+/** 本機資料夾匯入時的 session base path（供 teardown 清理快取） */
 let localBundleBasePath = null;
 const LOCAL_BUNDLE_PREFIX = '/__omni_local__/';
 const LOCAL_BUNDLE_CACHE = 'omnisense-local-bundles-v1';
+
+function revokeLocalModuleBlobUrl() {
+    if (localModuleBlobUrl) {
+        URL.revokeObjectURL(localModuleBlobUrl);
+        localModuleBlobUrl = null;
+    }
+}
 
 function makeLocalBundleSessionId() {
     return `bundle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function normalizeRelativePath(p) {
-    const raw = String(p || '').split('\\').join('/').replace(/^\/+/, '').replace(/^\.\//, '');
-    const parts = [];
-    for (const seg of raw.split('/')) {
-        if (seg === '' || seg === '.') continue;
-        if (seg === '..') throw new Error('鞈?憭曉?思??迂?楝敺?..嚗?);
-        parts.push(seg);
-    }
-    return parts.join('/');
-}
-
-/**
- * 敺??冗?扳???.js 頝臬???亙瑼??踹? FileList ?????亙瑼?洵銝???? * @param {string[]} jsRelPaths
- * @returns {string}
- */
-function pickLocalBundleEntryRel(jsRelPaths) {
-    const paths = [...new Set(jsRelPaths)].filter(Boolean);
-    if (!paths.length) {
-        throw new Error('鞈?憭曉?曆???.js ?亙瑼?撱箄降?賢? app.js ??index.js嚗?);
-    }
-    const lower = (s) => s.toLowerCase();
-    const tail = (s) => s.split('/').pop() || s;
-    const priority = ['app.js', 'index.js', 'main.js', 'main.mjs'];
-    for (const name of priority) {
-        const hit = paths.find((p) => lower(tail(p)) === name);
-        if (hit) return hit;
-    }
-    if (paths.length === 1) return paths[0];
-    paths.sort((a, b) => {
-        const da = a.split('/').length;
-        const db = b.split('/').length;
-        if (da !== db) return da - db;
-        return lower(a).localeCompare(lower(b));
-    });
-    return paths[0];
-}
-
-/**
- * ?祆?鞈?憭暹芋蝯?鞈?SW ? /__omni_local__/嚗?撠鋡?SW ?亦恣嚗mport ???404?? */
-async function ensureServiceWorkerForLocalBundle() {
-    if (!('serviceWorker' in navigator)) {
-        throw new Error('甇斤汗?其??舀 Service Worker嚗瘜蝙?具?交?啗??冗??隢?刻票銝?HTTPS 蝬脣?嚗??芸?亙銝 JS??);
-    }
-    if (window.location.protocol === 'file:') {
-        throw new Error('隢?冽?獢蜇蝞∠?仿???HTML嚗???localhost ??HTTPS ??嚗? README ??Web 雿輻?孵?嚗??血??⊥?頛?祆?鞈?憭暹芋蝯?);
-    }
-    const swUrl = new URL('./sw.js', import.meta.url);
-    const scopeUrl = new URL('./', import.meta.url);
-    await navigator.serviceWorker.register(swUrl.href, { scope: scopeUrl.href });
-    await navigator.serviceWorker.ready;
-    for (let i = 0; i < 40 && !navigator.serviceWorker.controller; i++) {
-        await new Promise((r) => setTimeout(r, 50));
-    }
-    if (!navigator.serviceWorker.controller) {
-        await new Promise((resolve) => {
-            const done = () => resolve();
-            const t = setTimeout(done, 2500);
-            navigator.serviceWorker.addEventListener(
-                'controllerchange',
-                () => {
-                    clearTimeout(t);
-                    done();
-                },
-                { once: true }
-            );
-        });
-    }
-    if (!navigator.serviceWorker.controller) {
-        throw new Error(
-            'Service Worker 撠?亦恣?祇??ｇ??⊥?頛?祆?鞈?憭整???Ctrl+F5 撘瑕??渡?敺?閰虫?甈∴????極????Application ??Service Workers 蝣箄?撌脣??具?
-        );
-    }
+    return String(p || '')
+        .replaceAll('\\', '/')
+        .replace(/^\/+/, '')
+        .replace(/^\.\//, '');
 }
 
 function guessContentType(path) {
@@ -131,28 +75,30 @@ async function clearLocalBundleCacheByPrefix(basePath) {
             })
         );
     } catch (e) {
-        console.warn('皜?祆? bundle 敹怠?憭望?', e);
+        console.warn('清除本機 bundle 快取失敗', e);
     }
 }
 
 async function stageLocalBundleFiles(files) {
-    if (!files || !files.length) throw new Error('?芷?遙雿?獢?);
-    await ensureServiceWorkerForLocalBundle();
+    if (!files || !files.length) throw new Error('未選取任何檔案');
     const sessionId = makeLocalBundleSessionId();
     const basePath = `${LOCAL_BUNDLE_PREFIX}${sessionId}/`;
     const baseUrl = new URL(`.${basePath}`, window.location.href);
     const cache = await caches.open(LOCAL_BUNDLE_CACHE);
-    const jsRelPaths = [];
+    let entryRel = '';
 
     for (const f of files) {
         const rel = normalizeRelativePath(f.webkitRelativePath || f.name);
         if (!rel) continue;
-        if (/\.m?js$/i.test(rel)) jsRelPaths.push(rel);
+        if (!entryRel && /\.m?js$/i.test(rel)) {
+            const tail = rel.split('/').pop()?.toLowerCase();
+            if (tail === 'app.js' || tail === 'index.js' || !entryRel) entryRel = rel;
+        }
         const reqUrl = new URL(rel, baseUrl).href;
         const ct = guessContentType(rel);
         await cache.put(reqUrl, new Response(f, { headers: { 'Content-Type': ct, 'Cache-Control': 'no-store' } }));
     }
-    const entryRel = pickLocalBundleEntryRel(jsRelPaths);
+    if (!entryRel) throw new Error('資料夾內找不到 .js 入口檔（建議命名 app.js 或 index.js）');
     return { entryUrl: new URL(entryRel, baseUrl).href, basePath };
 }
 
@@ -160,7 +106,7 @@ async function getProjects() {
     if (cachedProjects) return cachedProjects;
     let r = await fetch(new URL('./projects.json', import.meta.url));
     if (!r.ok) r = await fetch(new URL('../projects.json', import.meta.url));
-    if (!r.ok) throw new Error('projects.json 頛憭望?');
+    if (!r.ok) throw new Error('projects.json 載入失敗');
     cachedProjects = await r.json();
     return cachedProjects;
 }
@@ -245,6 +191,7 @@ function updateHeaderSubtitle() {
 }
 
 async function teardownActiveModule() {
+    revokeLocalModuleBlobUrl();
     if (localBundleBasePath) {
         await clearLocalBundleCacheByPrefix(localBundleBasePath);
         localBundleBasePath = null;
@@ -254,14 +201,15 @@ async function teardownActiveModule() {
         if (typeof activeModule.cleanup === 'function') await activeModule.cleanup();
         else if (typeof activeModule.unmount === 'function') await activeModule.unmount();
     } catch (e) {
-        console.warn('撖阡? teardown', e);
+        console.warn('實驗 teardown', e);
     }
     activeModule = null;
     activeId = null;
 }
 
 /**
- * ?芾ˊ撠??∪葆嚗誑?? import 頛 ES 璅∠?嚗ttp(s) ? CORS嚗lob: ?箸璈?伐??? * @param {string} url
+ * 自製專案卡帶：以動態 import 載入 ES 模組（http(s) 需 CORS；blob: 為本機匯入）。
+ * @param {string} url
  * @returns {Promise<object>}
  */
 export async function loadExternalModule(url) {
@@ -269,11 +217,11 @@ export async function loadExternalModule(url) {
     try {
         u = new URL(url, window.location.href);
     } catch {
-        throw new Error('?⊥???URL');
+        throw new Error('無效的 URL');
     }
     const ok = /^https?:$/i.test(u.protocol) || /^blob:$/i.test(u.protocol);
     if (!ok) {
-        throw new Error('???http(s) ?璈?伐?blob嚗芋蝯??');
+        throw new Error('僅支援 http(s) 或本機匯入（blob）模組位址');
     }
     return import(/* @vite-ignore */ u.href);
 }
@@ -286,7 +234,7 @@ async function getMergedProjectMeta(id) {
         const r = await fetch(new URL(`../experiments/${id}/config.json`, import.meta.url));
         if (r.ok) extra = await r.json();
     } catch {
-        /* ??config ?舐 */
+        /* 無 config 可略 */
     }
     return { ...base, ...extra };
 }
@@ -297,20 +245,20 @@ async function maybeHardwarePresetPrompt(meta) {
     if (!preset || typeof preset !== 'object') return;
     const msg =
         preset.message ||
-        '甇文祕撽遣霅啣??券?閮剛雿??見閮剖???西??甇亥鋆蔭嚗?;
+        '此實驗建議套用預設腳位與取樣設定。是否自動同步至裝置？';
     if (!window.confirm(msg)) return;
     if (!ble.isConnected()) {
-        window.alert('撠???嚗歇?仿?銝?????敺銝餅?唳????具?);
+        window.alert('尚未連線，已略過下發。請連線後於主控台手動套用。');
         return;
     }
     try {
         await applyHardwarePreset(preset);
         lastShellPresetApplied = true;
         const si = document.getElementById('syncIndicator');
-        if (si) si.innerText = '??撌脣??典祕撽遣霅啗身摰?;
+        if (si) si.innerText = '⚡ 已套用實驗建議設定';
     } catch (e) {
         console.warn(e);
-        window.alert('憟閮剖?憭望?嚗??潔蜓?批??隤踵??);
+        window.alert('套用設定失敗，請於主控台手動調整。');
     }
 }
 
@@ -335,8 +283,8 @@ async function mountDashboard() {
         console.error('Dashboard load failed', e);
         root.innerHTML = `
           <div class="rounded-xl border border-rose-500/40 bg-rose-950/20 p-4 text-sm text-rose-200">
-            銝餅?啗??亙仃??隢???渡??嚗trl+F5嚗?br>
-            <span class="text-rose-300/90">?航炊嚗?{String(e?.message || e)}</span>
+            主控台載入失敗，請先重新整理頁面（Ctrl+F5）。<br>
+            <span class="text-rose-300/90">錯誤：${String(e?.message || e)}</span>
           </div>`;
     }
 }
@@ -348,8 +296,8 @@ function renderProjectGrid() {
         const list = catalogExperiments(projects);
         wrap.innerHTML = `
             <div class="mb-3">
-                <h2 class="text-base font-bold text-slate-100 tracking-tight">撖阡?撠?</h2>
-                <p class="text-[11px] text-slate-500 mt-0.5">暺?∪葆隞亙?????<code class="text-cyan-500/90">experiments/&lt;id&gt;/app.js</code>??/p>
+                <h2 class="text-base font-bold text-slate-100 tracking-tight">實驗專案</h2>
+                <p class="text-[11px] text-slate-500 mt-0.5">點選卡帶以動態載入 <code class="text-cyan-500/90">experiments/&lt;id&gt;/app.js</code>。</p>
             </div>
             <div id="project-grid-inner" class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3"></div>`;
         const inner = document.getElementById('project-grid-inner');
@@ -412,11 +360,11 @@ async function launchCustomExperiment(urlString) {
     try {
         u = new URL(urlString.trim(), window.location.href);
     } catch {
-        window.alert('隢撓?交??? http(s) 蝬脣?');
+        window.alert('請輸入有效的 http(s) 網址');
         return;
     }
     if (!/^https?:$/i.test(u.protocol)) {
-        window.alert('???http ??https 璅∠?雿?');
+        window.alert('僅支援 http 或 https 模組位址');
         return;
     }
 
@@ -433,7 +381,7 @@ async function launchCustomExperiment(urlString) {
         activeId = 'external';
         const root = getContainer();
         if (!mod.mount) {
-            throw new Error('璅∠?敹? export async function mount(root)');
+            throw new Error('模組必須 export async function mount(root)');
         }
         await mod.mount(root);
         if (ble.isConnected() && mod.onConnected) {
@@ -448,20 +396,60 @@ async function launchCustomExperiment(urlString) {
         experimentRun = null;
         refreshLayout();
         window.alert(
-            '?⊥?頛璅∠?嚗虜閬???CORS?? ES module??蝬脣??航炊嚗n' + String(e.message || e)
+            '無法載入模組（常見原因：CORS、非 ES module、或網址錯誤）。\n' + String(e.message || e)
         );
     }
 }
 
 /**
- * ?芾ˊ撠?嚗?交璈??冗嚗S + ???冗鞈?嚗蒂? SW ?航??楝敺? * @param {FileList | File[]} files
+ * 自製專案：從本機選取的 .js 檔建立 blob URL 後動態 import（無需 CORS）。
+ * @param {File} file
+ */
+async function launchLocalCustomModule(file) {
+    await teardownActiveModule();
+    shellNav = 'custom';
+    const blob = new Blob([await file.text()], { type: 'text/javascript' });
+    localModuleBlobUrl = URL.createObjectURL(blob);
+    experimentRun = { type: 'local', name: file.name };
+    refreshLayout();
+    setNavActive();
+    updateHeaderSubtitle();
+
+    try {
+        const mod = await loadExternalModule(localModuleBlobUrl);
+        activeModule = mod;
+        activeId = 'external';
+        const root = getContainer();
+        if (!mod.mount) {
+            throw new Error('模組必須 export async function mount(root)');
+        }
+        await mod.mount(root);
+        if (ble.isConnected() && mod.onConnected) {
+            try {
+                await mod.onConnected();
+            } catch (e) {
+                console.warn(e);
+            }
+        }
+    } catch (e) {
+        console.warn(e);
+        experimentRun = null;
+        revokeLocalModuleBlobUrl();
+        refreshLayout();
+        window.alert('無法載入本機模組（須為 ES module，且 export mount）。\n' + String(e.message || e));
+    }
+}
+
+/**
+ * 自製專案：匯入本機資料夾（JS + 同資料夾資源）並掛到 SW 可讀取路徑。
+ * @param {FileList | File[]} files
  */
 async function launchLocalCustomBundle(files) {
     await teardownActiveModule();
     shellNav = 'custom';
     const all = Array.from(files || []);
     const firstName = all[0]?.webkitRelativePath?.split('/')[0] || all[0]?.name || 'local-bundle';
-    experimentRun = { type: 'local', name: `${firstName}嚗??冗嚗 };
+    experimentRun = { type: 'local', name: `${firstName}（資料夾）` };
     refreshLayout();
     setNavActive();
     updateHeaderSubtitle();
@@ -474,7 +462,7 @@ async function launchLocalCustomBundle(files) {
         activeId = 'external';
         const root = getContainer();
         if (!mod.mount) {
-            throw new Error('璅∠?敹? export async function mount(root)');
+            throw new Error('模組必須 export async function mount(root)');
         }
         await mod.mount(root);
         if (ble.isConnected() && mod.onConnected) {
@@ -493,14 +481,14 @@ async function launchLocalCustomBundle(files) {
         }
         refreshLayout();
         window.alert(
-            '?⊥?頛?祆?鞈?憭暹芋蝯????亙 .js嚗? export mount嚗n' + String(e.message || e)
+            '無法載入本機資料夾模組（需包含入口 .js，且 export mount）。\n' + String(e.message || e)
         );
     }
 }
 
 /**
- * 優先使用 File System Access API（通常不會顯示「上傳到網站」措辭），
- * 不支援時再回退到 <input webkitdirectory>。
+ * 優先使用 File System Access API，降低資料夾匯入時出現「上傳檔案」警告的機率；
+ * 若瀏覽器不支援，會回退到既有的 input[webkitdirectory] 流程。
  * @returns {Promise<File[]>}
  */
 async function pickLocalBundleFiles() {
@@ -519,7 +507,7 @@ async function pickLocalBundleFiles() {
                     configurable: true
                 });
             } catch {
-                /* 某些瀏覽器不允許覆寫此屬性 */
+                // 某些瀏覽器不允許覆寫此屬性，可略過
             }
             files.push(f);
         }
@@ -582,7 +570,7 @@ async function onConnectClick() {
         document.getElementById('connectBtn')?.classList.add('hidden');
         document.getElementById('disconnectBtn')?.classList.remove('hidden');
         const si = document.getElementById('syncIndicator');
-        if (si) si.innerText = '??鋆蔭撌脣停蝺?;
+        if (si) si.innerText = '✅ 裝置已就緒';
         if (activeModule?.onConnected) await activeModule.onConnected();
     } catch (e) {
         console.warn(e);
@@ -596,7 +584,7 @@ function onDisconnectClick() {
     document.getElementById('connectBtn')?.classList.remove('hidden');
     document.getElementById('disconnectBtn')?.classList.add('hidden');
     const si = document.getElementById('syncIndicator');
-    if (si) si.innerText = '撌脫????;
+    if (si) si.innerText = '已斷開藍牙';
 }
 
 async function init() {
@@ -608,7 +596,7 @@ async function init() {
         const input = document.getElementById('customModuleUrl');
         const v = input?.value?.trim();
         if (!v) {
-            window.alert('隢票銝芋蝯?摰 URL');
+            window.alert('請貼上模組的完整 URL');
             return;
         }
         launchCustomExperiment(v).catch(console.error);
@@ -632,10 +620,7 @@ async function init() {
     customFolderInput?.addEventListener('change', () => {
         const files = Array.from(customFolderInput.files || []);
         customFolderInput.value = '';
-        if (!files.length) {
-            window.alert('?芷?遙雿?獢?汗?冽閰Ｗ??臬撠??冗銝?唳蝬脩?嚗?暺??喋誑蝜潛???);
-            return;
-        }
+        if (!files.length) return;
         launchLocalCustomBundle(files).catch(console.error);
     });
 
@@ -643,7 +628,7 @@ async function init() {
     document.getElementById('disconnectBtn')?.addEventListener('click', onDisconnectClick);
     window.addEventListener('omnisense:ble-disconnected', onDisconnectClick);
 
-    /** 撘?閰衣?蝑芋蝯???敺?瘙???銝???孵祕撽??身?駁??撣恬? */
+    /** 弓匠試煉等模組：通關後請求切換下一個官方實驗（預設電阻鑑定師） */
     window.addEventListener('omnisense:forge-next', (ev) => {
         const id = typeof ev.detail?.nextId === 'string' && ev.detail.nextId ? ev.detail.nextId : 'analog-rocket';
         launchOfficialExperiment(id).catch(console.error);
