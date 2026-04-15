@@ -9,6 +9,7 @@ import * as ble from './core/ble.js';
 import { omni } from './core/state.js';
 import { applyHardwarePreset } from './hardwarePreset.js';
 
+const THEME_STORAGE_KEY = 'omnisense_theme_mode';
 let activeModule = null;
 let activeId = null;
 let cachedProjects = null;
@@ -26,6 +27,32 @@ let localModuleBlobUrl = null;
 let localBundleBasePath = null;
 const LOCAL_BUNDLE_PREFIX = '/__omni_local__/';
 const LOCAL_BUNDLE_CACHE = 'omnisense-local-bundles-v1';
+
+function applyThemeMode(mode) {
+    const light = mode === 'light';
+    document.body.classList.toggle('theme-light', light);
+    const btn = document.getElementById('themeToggleBtn');
+    const icon = document.getElementById('themeToggleIcon');
+    if (btn) {
+        btn.setAttribute('aria-label', light ? '切換為夜間模式' : '切換為日間模式');
+        btn.setAttribute('title', light ? '切換為夜間模式' : '切換為日間模式');
+    }
+    if (icon) {
+        icon.setAttribute('data-lucide', light ? 'moon' : 'sun');
+    }
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function initThemeToggle() {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    applyThemeMode(saved === 'light' ? 'light' : 'dark');
+    document.getElementById('themeToggleBtn')?.addEventListener('click', () => {
+        const isLight = document.body.classList.contains('theme-light');
+        const next = isLight ? 'dark' : 'light';
+        localStorage.setItem(THEME_STORAGE_KEY, next);
+        applyThemeMode(next);
+    });
+}
 
 function revokeLocalModuleBlobUrl() {
     if (localModuleBlobUrl) {
@@ -585,6 +612,7 @@ function onDisconnectClick() {
 async function init() {
     const projects = await getProjects();
     buildShellNav();
+    initThemeToggle();
 
     document.getElementById('experimentBackBtn')?.addEventListener('click', () => onExperimentBack().catch(console.error));
     document.getElementById('customLaunchBtn')?.addEventListener('click', () => {

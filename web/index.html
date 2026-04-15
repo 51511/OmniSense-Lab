@@ -42,6 +42,40 @@
         .nav-tab:not(.nav-tab-active) { color: #94a3b8; }
         .nav-tab:not(.nav-tab-active):hover { background: rgba(30, 41, 59, 0.8); color: #e2e8f0; }
         .nav-tab-active { background: rgba(6, 182, 212, 0.15); color: #22d3ee; border-color: rgba(34, 211, 238, 0.35); }
+        .theme-toggle-btn { display: inline-flex; align-items: center; justify-content: center; width: 2.35rem; height: 2.35rem; border-radius: 9999px; border: 1px solid rgba(148,163,184,0.45); background: rgba(15,23,42,0.8); color: #e2e8f0; transition: background .15s, color .15s, border-color .15s; }
+        .theme-toggle-btn:hover { background: rgba(30,41,59,0.9); border-color: rgba(34,211,238,0.55); color: #67e8f9; }
+        body.theme-light { background-color: #ffffff !important; color: #0f172a !important; }
+        body.theme-light #appHeader h1 { color: #0e7490 !important; }
+        body.theme-light #appHeader #headerSubtitle { color: #334155 !important; }
+        body.theme-light #appHeader #syncIndicator { color: #64748b !important; }
+        body.theme-light #appHeader .app-header-brand p { color: #64748b !important; }
+        body.theme-light .glass-card { background: rgba(255,255,255,0.98); border-color: rgba(148,163,184,0.72); box-shadow: 0 6px 20px rgba(15,23,42,0.08); }
+        body.theme-light .theme-toggle-btn { background: #f8fafc; color: #0f172a; border-color: rgba(100,116,139,0.55); }
+        body.theme-light .theme-toggle-btn:hover { background: #e2e8f0; color: #0f172a; border-color: rgba(30,64,175,0.45); }
+        body.theme-light .nav-tab:not(.nav-tab-active) { color: #334155; }
+        body.theme-light .nav-tab:not(.nav-tab-active):hover { background: rgba(226,232,240,0.95); color: #0f172a; }
+        body.theme-light .nav-tab-active { background: rgba(14,116,144,0.12); color: #0e7490; border-color: rgba(14,116,144,0.38); }
+        body.theme-light #connectBtn { background: #0284c7 !important; color: #ffffff !important; box-shadow: 0 6px 18px rgba(2,132,199,0.22); }
+        body.theme-light #connectBtn:hover { background: #0369a1 !important; }
+        body.theme-light #disconnectBtn { background: #e11d48 !important; color: #ffffff !important; }
+        body.theme-light #disconnectBtn:hover { background: #be123c !important; }
+        body.theme-light #navMobile { background: rgba(248,250,252,0.97); border-color: rgba(148,163,184,0.65); }
+        body.theme-light #connQualityPill, body.theme-light #actualFpsPill { background: rgba(226,232,240,0.95) !important; border-color: rgba(148,163,184,0.8) !important; color: #334155 !important; }
+        body.theme-light #view-projects button { background: rgba(255,255,255,0.98) !important; border-color: rgba(148,163,184,0.72) !important; }
+        body.theme-light #view-projects button:hover { background: #f8fafc !important; border-color: rgba(14,116,144,0.55) !important; }
+        body.theme-light #view-projects button p { color: #0f172a !important; }
+        body.theme-light #view-projects button .text-slate-500 { color: #475569 !important; }
+        body.theme-light #view-custom p, body.theme-light #view-custom .text-slate-500, body.theme-light #view-custom .text-slate-400 { color: #334155 !important; }
+        body.theme-light #view-custom code { color: #0e7490 !important; }
+        body.theme-light #customModuleUrl { background: #ffffff !important; color: #0f172a !important; border-color: rgba(148,163,184,0.85) !important; }
+        body.theme-light #customModuleUrl::placeholder { color: #64748b !important; }
+        body.theme-light #customImportFolderBtn, body.theme-light #customLaunchBtn { background: #0284c7 !important; color: #ffffff !important; }
+        body.theme-light #customImportFolderBtn:hover, body.theme-light #customLaunchBtn:hover { background: #0369a1 !important; }
+        body.theme-light #experiment-back-bar button { background: #f8fafc !important; color: #0f172a !important; border-color: rgba(148,163,184,0.75) !important; }
+        body.theme-light #experiment-back-bar button:hover { background: #e2e8f0 !important; }
+        body.theme-light #view-custom .inline-flex { background: #ffffff !important; color: #0f172a !important; border-color: rgba(148,163,184,0.85) !important; }
+        body.theme-light #view-custom .inline-flex:hover { background: #f1f5f9 !important; }
+        body.theme-light #pwaInstallBannerInner { background: #0369a1 !important; color: #ffffff !important; border-color: rgba(2,132,199,0.4) !important; }
         #navMobile .nav-tab { flex: 1; flex-direction: column; justify-content: center; font-size: 0.65rem; padding: 0.5rem 0.25rem; gap: 0.2rem; }
         #navMobile .nav-tab i { width: 1.35rem; height: 1.35rem; }
         @media (max-width: 768px) {
@@ -104,6 +138,9 @@
                 </button>
                 <button type="button" id="disconnectBtn" class="hidden flex items-center gap-1.5 md:gap-2 bg-rose-600 hover:bg-rose-500 px-4 md:px-6 py-2 md:py-2.5 rounded-full transition-all font-bold shadow-lg text-xs md:text-sm whitespace-nowrap shrink-0">
                     <i data-lucide="unplug" class="w-4 h-4 md:w-[1.125rem] md:h-[1.125rem]"></i> 斷開
+                </button>
+                <button type="button" id="themeToggleBtn" class="theme-toggle-btn shrink-0" aria-label="切換日夜模式" title="切換日夜模式">
+                    <i id="themeToggleIcon" data-lucide="sun" class="w-4 h-4"></i>
                 </button>
                 <div class="app-header-pills flex flex-wrap min-w-0 flex-1 md:flex-initial items-center gap-2 max-[768px]:justify-end">
                     <span id="connQualityPill" class="text-[11px] text-slate-400 bg-slate-800/70 border border-slate-600/60 rounded-full px-2.5 md:px-3 py-1 md:py-1.5 max-[768px]:max-w-[46%] truncate">連線品質：--</span>
