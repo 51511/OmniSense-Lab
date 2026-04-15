@@ -13,7 +13,7 @@
 #define CHARACTERISTIC_UUID_TX (uint16_t)0xFFE1
 #define CHARACTERISTIC_UUID_RX (uint16_t)0xFFE2
 
-#define BLE_DEVICE_NAME "OmniSense_19"
+#define BLE_DEVICE_NAME "OmniSense_02"
 
 #define OMNISENSE_VER_X   0
 #define OMNISENSE_VER_FW  4

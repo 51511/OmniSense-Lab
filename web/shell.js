@@ -72,6 +72,42 @@ function normalizeRelativePath(p) {
         .replace(/^\.\//, '');
 }
 
+/**
+ * 本機資料夾匯入仰賴 SW 攔截 /__omni_local__/ 路徑；
+ * 若頁面尚未被 SW 接管，dynamic import 會直接 404。
+ */
+async function ensureServiceWorkerForLocalBundle() {
+    if (!('serviceWorker' in navigator)) {
+        throw new Error('此瀏覽器不支援 Service Worker，無法使用本機卡帶匯入。');
+    }
+    if (window.location.protocol === 'file:') {
+        throw new Error('請使用 HTTPS 或 localhost 開啟頁面，才能匯入本機卡帶。');
+    }
+    const swUrl = new URL('./sw.js', import.meta.url);
+    const scopeUrl = new URL('./', import.meta.url);
+    await navigator.serviceWorker.register(swUrl.href, { scope: scopeUrl.href });
+    await navigator.serviceWorker.ready;
+
+    // 等待控制權交給 SW（避免 import /__omni_local__/ 時仍直接走網路）
+    if (!navigator.serviceWorker.controller) {
+        await new Promise((resolve) => {
+            const done = () => resolve();
+            const timeout = setTimeout(done, 2500);
+            navigator.serviceWorker.addEventListener(
+                'controllerchange',
+                () => {
+                    clearTimeout(timeout);
+                    done();
+                },
+                { once: true }
+            );
+        });
+    }
+    if (!navigator.serviceWorker.controller) {
+        throw new Error('Service Worker 尚未接管頁面。請重新整理後再試一次。');
+    }
+}
+
 function guessContentType(path) {
     const p = path.toLowerCase();
     if (p.endsWith('.js') || p.endsWith('.mjs')) return 'text/javascript; charset=utf-8';
@@ -108,6 +144,7 @@ async function clearLocalBundleCacheByPrefix(basePath) {
 
 async function stageLocalBundleFiles(files) {
     if (!files || !files.length) throw new Error('未選取任何檔案');
+    await ensureServiceWorkerForLocalBundle();
     const sessionId = makeLocalBundleSessionId();
     const basePath = `${LOCAL_BUNDLE_PREFIX}${sessionId}/`;
     const baseUrl = new URL(`.${basePath}`, window.location.href);
