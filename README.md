@@ -62,3 +62,5 @@ python -m http.server 8080
 ## 授權
 
 見根目錄 **[LICENSE](LICENSE)**。商業利用請依授權條款另行取得授權。
+
+https://blackdogii.github.io/OmniSense-Lab/web/index.html
