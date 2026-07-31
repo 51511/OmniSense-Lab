@@ -1,4 +1,4 @@
-/**
+﻿/**
  * App Shell：三區導覽（主控台／實驗專案／自製專案）、卡帶式動態載入、生命週期 teardown。
  * 官方模組：import ../experiments/{id}/app.js
  * 自製專案：loadExternalModule(url) → 動態 import（遠端需 CORS；本地為 blob URL）
@@ -9,6 +9,7 @@ import * as ble from './core/ble.js';
 import { omni } from './core/state.js';
 import { applyHardwarePreset } from './hardwarePreset.js';
 
+const THEME_STORAGE_KEY = 'omnisense_theme_mode';
 let activeModule = null;
 let activeId = null;
 let cachedProjects = null;
@@ -22,12 +23,147 @@ let experimentRun = null;
 
 /** 本機匯入 JS 時的 object URL，離開模組時須 revoke */
 let localModuleBlobUrl = null;
+/** 本機資料夾匯入時的 session base path（供 teardown 清理快取） */
+let localBundleBasePath = null;
+const LOCAL_BUNDLE_PREFIX = '/__omni_local__/';
+const LOCAL_BUNDLE_CACHE = 'omnisense-local-bundles-v1';
+
+function applyThemeMode(mode) {
+    const light = mode === 'light';
+    document.body.classList.toggle('theme-light', light);
+    const btn = document.getElementById('themeToggleBtn');
+    const icon = document.getElementById('themeToggleIcon');
+    if (btn) {
+        btn.setAttribute('aria-label', light ? '切換為夜間模式' : '切換為日間模式');
+        btn.setAttribute('title', light ? '切換為夜間模式' : '切換為日間模式');
+    }
+    if (icon) {
+        icon.setAttribute('data-lucide', light ? 'moon' : 'sun');
+    }
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function initThemeToggle() {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    applyThemeMode(saved === 'light' ? 'light' : 'dark');
+    document.getElementById('themeToggleBtn')?.addEventListener('click', () => {
+        const isLight = document.body.classList.contains('theme-light');
+        const next = isLight ? 'dark' : 'light';
+        localStorage.setItem(THEME_STORAGE_KEY, next);
+        applyThemeMode(next);
+    });
+}
 
 function revokeLocalModuleBlobUrl() {
     if (localModuleBlobUrl) {
         URL.revokeObjectURL(localModuleBlobUrl);
         localModuleBlobUrl = null;
     }
+}
+
+function makeLocalBundleSessionId() {
+    return `bundle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeRelativePath(p) {
+    return String(p || '')
+        .replaceAll('\\', '/')
+        .replace(/^\/+/, '')
+        .replace(/^\.\//, '');
+}
+
+/**
+ * 本機資料夾匯入仰賴 SW 攔截 /__omni_local__/ 路徑；
+ * 若頁面尚未被 SW 接管，dynamic import 會直接 404。
+ */
+async function ensureServiceWorkerForLocalBundle() {
+    if (!('serviceWorker' in navigator)) {
+        throw new Error('此瀏覽器不支援 Service Worker，無法使用本機卡帶匯入。');
+    }
+    if (window.location.protocol === 'file:') {
+        throw new Error('請使用 HTTPS 或 localhost 開啟頁面，才能匯入本機卡帶。');
+    }
+    const swUrl = new URL('./sw.js', import.meta.url);
+    const scopeUrl = new URL('./', import.meta.url);
+    await navigator.serviceWorker.register(swUrl.href, { scope: scopeUrl.href });
+    await navigator.serviceWorker.ready;
+
+    // 等待控制權交給 SW（避免 import /__omni_local__/ 時仍直接走網路）
+    if (!navigator.serviceWorker.controller) {
+        await new Promise((resolve) => {
+            const done = () => resolve();
+            const timeout = setTimeout(done, 2500);
+            navigator.serviceWorker.addEventListener(
+                'controllerchange',
+                () => {
+                    clearTimeout(timeout);
+                    done();
+                },
+                { once: true }
+            );
+        });
+    }
+    if (!navigator.serviceWorker.controller) {
+        throw new Error('Service Worker 尚未接管頁面。請重新整理後再試一次。');
+    }
+}
+
+function guessContentType(path) {
+    const p = path.toLowerCase();
+    if (p.endsWith('.js') || p.endsWith('.mjs')) return 'text/javascript; charset=utf-8';
+    if (p.endsWith('.json')) return 'application/json; charset=utf-8';
+    if (p.endsWith('.png')) return 'image/png';
+    if (p.endsWith('.jpg') || p.endsWith('.jpeg')) return 'image/jpeg';
+    if (p.endsWith('.gif')) return 'image/gif';
+    if (p.endsWith('.webp')) return 'image/webp';
+    if (p.endsWith('.svg')) return 'image/svg+xml';
+    if (p.endsWith('.mp3')) return 'audio/mpeg';
+    if (p.endsWith('.wav')) return 'audio/wav';
+    if (p.endsWith('.ogg')) return 'audio/ogg';
+    if (p.endsWith('.css')) return 'text/css; charset=utf-8';
+    if (p.endsWith('.html')) return 'text/html; charset=utf-8';
+    return 'application/octet-stream';
+}
+
+async function clearLocalBundleCacheByPrefix(basePath) {
+    if (!basePath) return;
+    try {
+        const cache = await caches.open(LOCAL_BUNDLE_CACHE);
+        const keys = await cache.keys();
+        await Promise.all(
+            keys.map((req) => {
+                const p = new URL(req.url).pathname;
+                if (p.startsWith(basePath)) return cache.delete(req);
+                return Promise.resolve(false);
+            })
+        );
+    } catch (e) {
+        console.warn('清除本機 bundle 快取失敗', e);
+    }
+}
+
+async function stageLocalBundleFiles(files) {
+    if (!files || !files.length) throw new Error('未選取任何檔案');
+    await ensureServiceWorkerForLocalBundle();
+    const sessionId = makeLocalBundleSessionId();
+    const basePath = `${LOCAL_BUNDLE_PREFIX}${sessionId}/`;
+    const baseUrl = new URL(`.${basePath}`, window.location.href);
+    const cache = await caches.open(LOCAL_BUNDLE_CACHE);
+    let entryRel = '';
+
+    for (const f of files) {
+        const rel = normalizeRelativePath(f.webkitRelativePath || f.name);
+        if (!rel) continue;
+        if (!entryRel && /\.m?js$/i.test(rel)) {
+            const tail = rel.split('/').pop()?.toLowerCase();
+            if (tail === 'app.js' || tail === 'index.js' || !entryRel) entryRel = rel;
+        }
+        const reqUrl = new URL(rel, baseUrl).href;
+        const ct = guessContentType(rel);
+        await cache.put(reqUrl, new Response(f, { headers: { 'Content-Type': ct, 'Cache-Control': 'no-store' } }));
+    }
+    if (!entryRel) throw new Error('資料夾內找不到 .js 入口檔（建議命名 app.js 或 index.js）');
+    return { entryUrl: new URL(entryRel, baseUrl).href, basePath };
 }
 
 async function getProjects() {
@@ -109,17 +245,21 @@ function updateHeaderSubtitle() {
     }
     if (shellNav === 'custom') {
         if (!experimentRun) {
-            sub.textContent = '自製專案（網址或本機檔）';
+            sub.textContent = '自製專案（雲端卡帶 / 本機卡帶）';
         } else if (experimentRun.type === 'local') {
-            sub.textContent = `本機模組 · ${experimentRun.name}`;
+            sub.textContent = `本機卡帶 · ${experimentRun.name}`;
         } else {
-            sub.textContent = '外部實驗模組';
+            sub.textContent = '雲端卡帶';
         }
     }
 }
 
 async function teardownActiveModule() {
     revokeLocalModuleBlobUrl();
+    if (localBundleBasePath) {
+        await clearLocalBundleCacheByPrefix(localBundleBasePath);
+        localBundleBasePath = null;
+    }
     if (!activeModule) return;
     try {
         if (typeof activeModule.cleanup === 'function') await activeModule.cleanup();
@@ -218,12 +358,7 @@ function renderProjectGrid() {
     if (!wrap) return;
     getProjects().then((projects) => {
         const list = catalogExperiments(projects);
-        wrap.innerHTML = `
-            <div class="mb-3">
-                <h2 class="text-base font-bold text-slate-100 tracking-tight">實驗專案</h2>
-                <p class="text-[11px] text-slate-500 mt-0.5">點選卡帶以動態載入 <code class="text-cyan-500/90">experiments/&lt;id&gt;/app.js</code>。</p>
-            </div>
-            <div id="project-grid-inner" class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3"></div>`;
+        wrap.innerHTML = `<div id="project-grid-inner" class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3"></div>`;
         const inner = document.getElementById('project-grid-inner');
         for (const ex of list) {
             const card = document.createElement('button');
@@ -364,6 +499,83 @@ async function launchLocalCustomModule(file) {
     }
 }
 
+/**
+ * 自製專案：匯入本機資料夾（JS + 同資料夾資源）並掛到 SW 可讀取路徑。
+ * @param {FileList | File[]} files
+ */
+async function launchLocalCustomBundle(files) {
+    await teardownActiveModule();
+    shellNav = 'custom';
+    const all = Array.from(files || []);
+    const firstName = all[0]?.webkitRelativePath?.split('/')[0] || all[0]?.name || 'local-bundle';
+    experimentRun = { type: 'local', name: `${firstName}（資料夾）` };
+    refreshLayout();
+    setNavActive();
+    updateHeaderSubtitle();
+
+    try {
+        const staged = await stageLocalBundleFiles(all);
+        localBundleBasePath = staged.basePath;
+        const mod = await loadExternalModule(staged.entryUrl);
+        activeModule = mod;
+        activeId = 'external';
+        const root = getContainer();
+        if (!mod.mount) {
+            throw new Error('模組必須 export async function mount(root)');
+        }
+        await mod.mount(root);
+        if (ble.isConnected() && mod.onConnected) {
+            try {
+                await mod.onConnected();
+            } catch (e) {
+                console.warn(e);
+            }
+        }
+    } catch (e) {
+        console.warn(e);
+        experimentRun = null;
+        if (localBundleBasePath) {
+            await clearLocalBundleCacheByPrefix(localBundleBasePath);
+            localBundleBasePath = null;
+        }
+        refreshLayout();
+        window.alert(
+            '無法載入本機資料夾模組（需包含入口 .js，且 export mount）。\n' + String(e.message || e)
+        );
+    }
+}
+
+/**
+ * 優先使用 File System Access API，降低資料夾匯入時出現「上傳檔案」警告的機率；
+ * 若瀏覽器不支援，會回退到既有的 input[webkitdirectory] 流程。
+ * @returns {Promise<File[]>}
+ */
+async function pickLocalBundleFiles() {
+    if (!('showDirectoryPicker' in window)) return [];
+    const files = [];
+    const walk = async (dirHandle, prefix = '') => {
+        for await (const [name, handle] of dirHandle.entries()) {
+            if (handle.kind === 'directory') {
+                await walk(handle, `${prefix}${name}/`);
+                continue;
+            }
+            const f = await handle.getFile();
+            try {
+                Object.defineProperty(f, 'webkitRelativePath', {
+                    value: `${prefix}${name}`,
+                    configurable: true
+                });
+            } catch {
+                // 某些瀏覽器不允許覆寫此屬性，可略過
+            }
+            files.push(f);
+        }
+    };
+    const dir = await window.showDirectoryPicker({ mode: 'read' });
+    await walk(dir);
+    return files;
+}
+
 async function onShellNavClick(target) {
     if (target === shellNav && experimentRun) {
         await onExperimentBack();
@@ -437,6 +649,7 @@ function onDisconnectClick() {
 async function init() {
     const projects = await getProjects();
     buildShellNav();
+    initThemeToggle();
 
     document.getElementById('experimentBackBtn')?.addEventListener('click', () => onExperimentBack().catch(console.error));
     document.getElementById('customLaunchBtn')?.addEventListener('click', () => {
@@ -449,17 +662,26 @@ async function init() {
         launchCustomExperiment(v).catch(console.error);
     });
 
-    const customFileInput = document.getElementById('customModuleFile');
-    document.getElementById('customImportFileBtn')?.addEventListener('click', () => customFileInput?.click());
-    customFileInput?.addEventListener('change', () => {
-        const f = customFileInput.files?.[0];
-        customFileInput.value = '';
-        if (!f) return;
-        if (!/\.js$/i.test(f.name)) {
-            window.alert('請選擇副檔名為 .js 的檔案');
-            return;
+    const customFolderInput = document.getElementById('customModuleFolder');
+    document.getElementById('customImportFolderBtn')?.addEventListener('click', async () => {
+        if ('showDirectoryPicker' in window) {
+            try {
+                const fsFiles = await pickLocalBundleFiles();
+                if (fsFiles.length) {
+                    launchLocalCustomBundle(fsFiles).catch(console.error);
+                    return;
+                }
+            } catch (e) {
+                if (e?.name !== 'AbortError') console.warn(e);
+            }
         }
-        launchLocalCustomModule(f).catch(console.error);
+        customFolderInput?.click();
+    });
+    customFolderInput?.addEventListener('change', () => {
+        const files = Array.from(customFolderInput.files || []);
+        customFolderInput.value = '';
+        if (!files.length) return;
+        launchLocalCustomBundle(files).catch(console.error);
     });
 
     document.getElementById('connectBtn')?.addEventListener('click', onConnectClick);

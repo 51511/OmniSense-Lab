@@ -61,6 +61,10 @@ let smoothHz = 0;
 
 let dataListener = null;
 
+function isLightTheme() {
+    return document.body.classList.contains('theme-light');
+}
+
 function isMobileLikeViewport() {
     const coarse = window.matchMedia?.('(pointer: coarse)')?.matches;
     const narrow = window.innerWidth <= 900;
@@ -558,13 +562,17 @@ function formatTimeFromRight(usOffset) {
 
 function drawAxesAndGrid(p, chart) {
     const { left, right, top, bottom, yLo, yHi } = chart;
-    p.stroke(51, 65, 85);
+    const light = isLightTheme();
+    const axisStroke = light ? [148, 163, 184] : [51, 65, 85];
+    const labelMain = light ? [71, 85, 105] : [148, 163, 184];
+    const labelMinor = light ? [100, 116, 139] : [100, 116, 139];
+    p.stroke(...axisStroke);
     p.strokeWeight(1);
     p.line(left, top, left, bottom);
     p.line(right, top, right, bottom);
     p.line(left, bottom, right, bottom);
 
-    p.fill(148, 163, 184);
+    p.fill(...labelMain);
     p.noStroke();
     p.textSize(9);
     p.textAlign(p.LEFT, p.CENTER);
@@ -577,11 +585,11 @@ function drawAxesAndGrid(p, chart) {
     p.textAlign(p.CENTER, p.TOP);
     for (let i = 0; i <= 5; i++) {
         const x = p.map(i, 0, 5, left, right);
-        p.stroke(51, 65, 85, 120);
+        p.stroke(...axisStroke, light ? 100 : 120);
         p.line(x, top, x, bottom);
         p.noStroke();
         const sec = -5 + i;
-        p.fill(100, 116, 139);
+        p.fill(...labelMinor);
         p.text(`${sec}s`, x, bottom + 3);
     }
 }
@@ -636,7 +644,8 @@ function drawCrosshair(p, chart, packetHistory) {
     const cy = Math.max(top, Math.min(bottom, crosshair.y));
     const endTs = packetHistory[packetHistory.length - 1].tsUs >>> 0;
 
-    p.stroke(148, 163, 184, 160);
+    const light = isLightTheme();
+    p.stroke(light ? 100 : 148, light ? 116 : 163, light ? 139 : 184, 160);
     p.strokeWeight(1);
     p.line(cx, top, cx, bottom);
     p.line(left, cy, right, cy);
@@ -671,9 +680,11 @@ function drawCrosshair(p, chart, packetHistory) {
     const tx = Math.min(right - tw - 2, Math.max(left + 2, cx + 8));
     const ty = Math.max(top + 2, cy - th - 6);
     p.noStroke();
-    p.fill(15, 23, 42, 225);
+    if (light) p.fill(255, 255, 255, 228);
+    else p.fill(15, 23, 42, 225);
     p.rect(tx, ty, tw, th, 4);
-    p.fill(226, 232, 240);
+    if (light) p.fill(15, 23, 42);
+    else p.fill(226, 232, 240);
     p.textSize(9);
     p.textAlign(p.LEFT, p.TOP);
     p.text(txt, tx + 5, ty + 4);
@@ -694,7 +705,8 @@ function wireP5() {
             p.noLoop();
         };
         p.draw = () => {
-            p.background(10, 15, 30);
+            if (isLightTheme()) p.background(248, 250, 252);
+            else p.background(10, 15, 30);
             if (packetHistory.length < 2) return;
             const { lo: yLo, hi: yHi } = getCurrentWaveRange(packetHistory);
             const endTs = packetHistory[packetHistory.length - 1].tsUs >>> 0;

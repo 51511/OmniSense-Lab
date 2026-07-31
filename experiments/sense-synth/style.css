@@ -29,6 +29,28 @@
     color: transparent;
 }
 
+.omx-title-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+}
+
+.omx-side-btn {
+    border: 1px solid rgba(34, 211, 238, 0.45);
+    background: rgba(15, 23, 42, 0.85);
+    color: #67e8f9;
+    border-radius: 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.25rem 0.55rem;
+    cursor: pointer;
+}
+
+.omx-side-btn:hover {
+    background: rgba(34, 211, 238, 0.16);
+}
+
 .omx-sub {
     margin-top: 0.35rem;
     font-size: 0.72rem;
@@ -39,6 +61,14 @@
 .omx-grid {
     display: grid;
     gap: 0.75rem;
+    grid-template-columns: 1fr;
+}
+
+.omx-root.omx-compact .omx-controls-card {
+    display: none;
+}
+
+.omx-root.omx-compact .omx-grid {
     grid-template-columns: 1fr;
 }
 
